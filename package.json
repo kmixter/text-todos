@@ -15,14 +15,14 @@
 	"contributes": {
 		"commands": [
 			{
-				"command": "text-todo.findTodos",
-				"title": "Find TODOs"
+				"command": "text-todo.markTodoDone",
+				"title": "Mark TODO done"
 			}
 		],
 		"keybindings": [
             {
-                "command": "text-todo.findTodos",
-                "key": "ctrl+k a"
+                "command": "text-todo.markTodoDone",
+                "key": "ctrl+k m"
             }
         ]
 
