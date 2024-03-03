@@ -11,11 +11,11 @@ class Todo {
     start: Date | null = null;
     spentMinutes: number | null = null;
 
-    private static TODO_LINE_RE = /\^[MTWRFSN\*] /g;
-    private static DURATION_RE = /\ ([\d\.]+)m\b| ([\d\.]+)hr(s)?\b/g;
-    private static DUE_DATE_RE = /\ <=(\d+)\/(\d+)\b/g;
-    private static START_TIME_RE = /\@(\d+):(\d+)/g;
-    private static SPENT_TIME_RE = /\ \+([\d\.]+)(m|hr)/g;
+    private static TODO_LINE_RE = /^[MTWRFSN\*] /;
+    private static DURATION_RE = /\ ([\d\.]+)m\b| ([\d\.]+)hr(s)?\b/;
+    private static DUE_DATE_RE = /\ <=(\d+)\/(\d+)\b/;
+    private static START_TIME_RE = /\@(\d+):(\d+)/;
+    private static SPENT_TIME_RE = /\ \+([\d\.]+)(m|hr)/;
 
     private static DOW_STRINGS = ['M', 'T', 'W', 'R', 'F', 'S', 'N'];
 
@@ -176,8 +176,9 @@ class BaseTodoCommand implements vscode.Disposable {
         const nextLineStart = endOfLine.with({ character: endOfLine.character + 1 });
 
         // Check if we're at the end of the document
-        if (nextLineStart.isAfter(document.lineAt(document.lineCount - 1).range.end)) {
-            return document.getText().length; // Simulate view.size() behavior
+        const endPosition = document.lineAt(document.lineCount - 1).range.end
+        if (nextLineStart.isAfter(endPosition)) {
+            return endPosition; // Simulate view.size() behavior
         }
 
         return nextLineStart;
@@ -194,14 +195,59 @@ class BaseTodoCommand implements vscode.Disposable {
         return new vscode.Range(start, end);
     }
 
+    static isBlankLine(line: string): boolean {
+        return BaseTodoCommand.BLANK_LINE_RE.test(line);
+    }
+
+    findMyTodoRegion(): vscode.Range | undefined {  // Note the asynchronous aspect
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) { return undefined; }
+
+        const document = editor.document;
+        const currentPosition = editor.selection.active;
+
+        // Find last TODO region before cursor line.
+        const todoPattern = new RegExp('^TODOs(:)?\s*(?:##.*)?$');
+        let todoRegion = undefined;
+        let startLine = -1;
+        for (let lineNumber = currentPosition.line - 1; lineNumber > 0; lineNumber--) {
+            const lineText = document.lineAt(lineNumber).text;
+            if (todoPattern.test(lineText)) {
+                startLine = lineNumber; 
+                break;
+            }
+        }
+
+        if (startLine < 0) { return undefined; } 
+
+        // Find the end of the TODOs region
+        let endLine = startLine;
+        for (let i = startLine + 1; i < currentPosition.line; ++i) {
+            if (i - startLine >= BaseTodoCommand.MAX_LINES_IN_TODOS) {
+                break;
+            }
+
+            const lineText = document.lineAt(i).text;
+
+            if (Todo.isTodoLine(lineText)) {
+                endLine = i;
+            } else if (!BaseTodoCommand.isBlankLine(lineText)) {
+                break;
+            }
+        }
+
+        return new vscode.Range(document.lineAt(startLine).range.start,
+                                document.lineAt(endLine).range.end);
+    }
+
+
     dispose() {
         // Used to release any resources if needed.
     }
 }
 
 class MarkTodoDoneCommand extends BaseTodoCommand {
-    async run(edit: vscode.TextEditorEdit) {
-        const editor = vscode.window.activeTextEditor;
+    async run(editor: vscode.TextEditor, edit: vscode.TextEditorEdit) {
         if (!editor) { return; }
 
         const currentPosition = editor.selection.active;
@@ -216,10 +262,8 @@ class MarkTodoDoneCommand extends BaseTodoCommand {
 
         if (!todo.isDone()) {
             todo.dayNumber = new Date().getDay(); // 0 for Sunday, 6 for Saturday
-            vscode.window.showInformationMessage('Marked done');
         } else {
             todo.dayNumber = -1;
-            vscode.window.showInformationMessage('Unmarked done');
         }
 
         edit.replace(currentLine.range, todo.format());
@@ -227,11 +271,14 @@ class MarkTodoDoneCommand extends BaseTodoCommand {
 }
 
 class ArchiveTodosCommand extends BaseTodoCommand {
-    async run(edit: vscode.TextEditorEdit) {
-        const editor = vscode.window.activeTextEditor;
+    async run(editor: vscode.TextEditor, edit: vscode.TextEditorEdit) {
         if (!editor) { return; }
 
         const todoRegion = this.findMyTodoRegion();
+        if (todoRegion === undefined) {
+            vscode.window.showInformationMessage('No TODOs found');
+            return;
+        }
         const todoText = editor.document.getText(todoRegion);
 
         const archivedText: string[] = [];
@@ -248,12 +295,9 @@ class ArchiveTodosCommand extends BaseTodoCommand {
             }
         });
 
-        await edit.replace(todoRegion, archivedText.join('\n')); // Update the TODO region
-
-        const insertionPoint = this.getSimplePoint();
-        await editor.edit(editBuilder => {
-            editBuilder.insert(insertionPoint, newText.join('\n') + '\n');
-        });
+        edit.replace(todoRegion, archivedText.join('\n')); // Update the TODO region
+        const insertionPoint = editor.selections[0].start;
+        edit.insert(insertionPoint, newText.join('\n') + '\n');
     }
 }
 
@@ -262,8 +306,14 @@ class ArchiveTodosCommand extends BaseTodoCommand {
 // your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
 
-    const markTodoDoneCmd = new MarkTodoDoneCommand(); // Instantiate your command
+    const markTodoDoneCmd = new MarkTodoDoneCommand();
     context.subscriptions.push(
-        vscode.commands.registerCommand('text-todo.markTodoDone', markTodoDoneCmd.run.bind(markTodoDoneCmd))
+        vscode.commands.registerTextEditorCommand('text-todo.markTodoDone', markTodoDoneCmd.run.bind(markTodoDoneCmd))
     );
+
+    const archiveTodosCmd = new ArchiveTodosCommand();
+    context.subscriptions.push(
+        vscode.commands.registerTextEditorCommand('text-todo.archiveTodos', archiveTodosCmd.run.bind(markTodoDoneCmd))
+    );
+
 }

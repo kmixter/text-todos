@@ -17,12 +17,21 @@
 			{
 				"command": "text-todo.markTodoDone",
 				"title": "Mark TODO done"
+			},
+			{
+				"command": "text-todo.archiveTodos",
+				"title": "Archive TODOs"
 			}
+
 		],
 		"keybindings": [
             {
                 "command": "text-todo.markTodoDone",
                 "key": "ctrl+k m"
+            },
+            {
+                "command": "text-todo.archiveTodos",
+                "key": "ctrl+k a"
             }
         ]
 
