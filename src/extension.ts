@@ -1,5 +1,3 @@
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
 
 class Todo {
@@ -33,14 +31,18 @@ class Todo {
             this.dayNumber = Todo.DOW_STRINGS.indexOf(line[0]);
         }
 
-        this.desc = line.substring(2);
+        this.desc = Todo.stripAnnotations(line.substring(2));
+        [Todo.DURATION_RE, Todo.DUE_DATE_RE, Todo.START_TIME_RE, Todo.SPENT_TIME_RE].forEach((re) => {
+            this.desc = this.desc.replace(re, '');
+        });
+        this.desc.trimEnd();
 
         let durationMatch = line.match(Todo.DURATION_RE);
-        if (durationMatch) { // null check is sufficient here
-            if (durationMatch.groups?.[1]) { // Check the capture group directly
-                this.duration = parseFloat(durationMatch.groups[1]);
-            } else if (durationMatch.groups?.[2]) {
-                this.duration = parseFloat(durationMatch.groups[2]) * 60;
+        if (durationMatch) {
+            if (durationMatch[1]) {
+                this.duration = parseFloat(durationMatch[1]);
+            } else if (durationMatch[2]) {
+                this.duration = parseFloat(durationMatch[2]) * 60;
             }
         }
 
@@ -49,8 +51,8 @@ class Todo {
             const today = new Date();
             this.dueDate = new Date(
                 today.getFullYear(),
-                parseInt(dueDateMatch.groups?.[1] ?? '0') - 1, // Months are zero-indexed
-                parseInt(dueDateMatch.groups?.[2] ?? '0')
+                parseInt(dueDateMatch[1]) - 1, // Months are zero-indexed
+                parseInt(dueDateMatch[2])
             );
 
             const timeDelta = this.dueDate.getTime() - today.getTime();
@@ -59,8 +61,8 @@ class Todo {
 
         let startTimeMatch = line.match(Todo.START_TIME_RE);
         if (startTimeMatch) {
-            const hour = parseInt(startTimeMatch.groups?.[1] ?? '0');
-            const minute = parseInt(startTimeMatch.groups?.[2] ?? '0');
+            const hour = parseInt(startTimeMatch[1]);
+            const minute = parseInt(startTimeMatch[2]);
             this.start = new Date(); // Get the current date and time
             this.start.setHours(hour);
             this.start.setMinutes(minute);
@@ -68,8 +70,8 @@ class Todo {
 
         let spentTimeMatch = line.match(Todo.SPENT_TIME_RE);
         if (spentTimeMatch) {
-            this.spentMinutes = parseFloat(spentTimeMatch.groups?.[1] ?? '0');
-            if (spentTimeMatch.groups?.[2] === 'hr') {
+            this.spentMinutes = parseFloat(spentTimeMatch[1]);
+            if (spentTimeMatch[2] === 'hr') {
                 this.spentMinutes *= 60;
             }
         }
@@ -86,7 +88,7 @@ class Todo {
 
     static stripAnnotations(line: string): string {
         if (line.includes('##')) {
-            return line.substring(0, line.indexOf('##')).trimRight();
+            return line.substring(0, line.indexOf('##')).trimEnd();
         }
         return line;
     }
@@ -161,28 +163,10 @@ class Todo {
 class BaseTodoCommand implements vscode.Disposable {
     private static BLANK_LINE_RE = /^\s*$/;
     private static MAX_LINES_IN_TODOS = 1000;
-
-    getNextLinePoint(position: vscode.Position): vscode.Position {
-        const editor = vscode.window.activeTextEditor;
-        if (!editor) {
-            throw new Error('No active text editor');
-        }
-
-        const document = editor.document;
-        const line = document.lineAt(position);
-        const endOfLine = line.range.end; // End of the current line
-
-        // Find the start of the next line, if it exists
-        const nextLineStart = endOfLine.with({ character: endOfLine.character + 1 });
-
-        // Check if we're at the end of the document
-        const endPosition = document.lineAt(document.lineCount - 1).range.end
-        if (nextLineStart.isAfter(endPosition)) {
-            return endPosition; // Simulate view.size() behavior
-        }
-
-        return nextLineStart;
-    }
+    static timedRegionDecoration = vscode.window.createTextEditorDecorationType({
+        backgroundColor: 'rgba(128, 255, 128, 0.3)',
+        isWholeLine: true
+    });
 
     getLineStartPoint(position: vscode.Position): vscode.Position {
         const startOfLine = position.with({ character: 0 });
@@ -199,10 +183,7 @@ class BaseTodoCommand implements vscode.Disposable {
         return BaseTodoCommand.BLANK_LINE_RE.test(line);
     }
 
-    findMyTodoRegion(): vscode.Range | undefined {  // Note the asynchronous aspect
-        const editor = vscode.window.activeTextEditor;
-        if (!editor) { return undefined; }
-
+    findTodosRegion(editor: vscode.TextEditor): vscode.Range | undefined {  // Note the asynchronous aspect
         const document = editor.document;
         const currentPosition = editor.selection.active;
 
@@ -222,7 +203,7 @@ class BaseTodoCommand implements vscode.Disposable {
 
         // Find the end of the TODOs region
         let endLine = startLine;
-        for (let i = startLine + 1; i < currentPosition.line; ++i) {
+        for (let i = startLine + 1; i < document.lineCount; ++i) {
             if (i - startLine >= BaseTodoCommand.MAX_LINES_IN_TODOS) {
                 break;
             }
@@ -274,7 +255,7 @@ class ArchiveTodosCommand extends BaseTodoCommand {
     async run(editor: vscode.TextEditor, edit: vscode.TextEditorEdit) {
         if (!editor) { return; }
 
-        const todoRegion = this.findMyTodoRegion();
+        const todoRegion = this.findTodosRegion(editor);
         if (todoRegion === undefined) {
             vscode.window.showInformationMessage('No TODOs found');
             return;
@@ -301,19 +282,96 @@ class ArchiveTodosCommand extends BaseTodoCommand {
     }
 }
 
+class TimeTodoCommand extends BaseTodoCommand {
+    async run(editor: vscode.TextEditor, edit: vscode.TextEditorEdit, isStart: boolean) {
+        const todosRegion = this.findTodosRegion(editor);
+        if (!todosRegion) {
+            vscode.window.showErrorMessage('No TODO region');
+            return;
+        }
+
+        const currentPosition = editor.selection.active;
+        const lineRegion = editor.document.lineAt(currentPosition.line);
+
+        if (isStart && !Todo.isTodoLine(lineRegion.text)) {
+            vscode.window.showErrorMessage('Not on a TODO line');
+            return;
+        }
+
+        const todoLines = editor.document.getText(todosRegion).split('\n');
+        let line = todosRegion.start.line;
+        const timedRegions: vscode.Range[] = [];
+        const now = new Date();
+        const nowMins = now.getHours() * 60 + now.getMinutes();
+
+        const resultText: string[] = [];
+        for (let lineNumber = todosRegion.start.line; lineNumber <= todosRegion.end.line; ++lineNumber) {
+            let todo = new Todo();
+            const line = editor.document.lineAt(lineNumber)
+
+            if (!todo.parse(line.text)) {
+                resultText.push(line.text);
+                continue;
+            }
+
+            if (todo.start) {
+                let diffMins = nowMins - (todo.start.getHours() * 60 + todo.start.getMinutes());
+                if (diffMins < 0) {
+                    diffMins += 24 * 60; // Handle wrapping over to the next day
+                }
+
+                vscode.window.showInformationMessage(`Spent ${diffMins} minutes on ${todo.desc}`);
+
+                if (!todo.spentMinutes) {
+                    todo.spentMinutes = 0;
+                }
+
+                todo.spentMinutes += diffMins;
+                todo.start = null; // Reset start time
+            }
+
+            if (isStart && lineNumber == currentPosition.line && !todo.isDone()) {
+                todo.start = new Date();
+                timedRegions.push(line.range);
+            }
+
+            resultText.push(todo.format());
+        }
+
+        edit.replace(todosRegion, resultText.join('\n'));
+
+        // Create a decoration type (customize the styling)
+        editor.setDecorations(TimeTodoCommand.timedRegionDecoration, timedRegions);
+    }
+}
 
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
 
-    const markTodoDoneCmd = new MarkTodoDoneCommand();
+    const markTodoDoneCommand = new MarkTodoDoneCommand();
     context.subscriptions.push(
-        vscode.commands.registerTextEditorCommand('text-todo.markTodoDone', markTodoDoneCmd.run.bind(markTodoDoneCmd))
+        vscode.commands.registerTextEditorCommand('text-todo.markTodoDone', markTodoDoneCommand.run.bind(markTodoDoneCommand))
     );
 
-    const archiveTodosCmd = new ArchiveTodosCommand();
+    const archiveTodosCommand = new ArchiveTodosCommand();
     context.subscriptions.push(
-        vscode.commands.registerTextEditorCommand('text-todo.archiveTodos', archiveTodosCmd.run.bind(markTodoDoneCmd))
+        vscode.commands.registerTextEditorCommand('text-todo.archiveTodos', archiveTodosCommand.run.bind(markTodoDoneCommand))
     );
 
+    context.subscriptions.push(
+        vscode.commands.registerTextEditorCommand('text-todo.startTimeTodo',
+                                                  (editor: vscode.TextEditor, edit: vscode.TextEditorEdit) => {
+            let timeTodoCommand = new TimeTodoCommand();
+            timeTodoCommand.run(editor, edit, true);
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerTextEditorCommand('text-todo.stopTimeTodo',
+                                                  (editor: vscode.TextEditor, edit: vscode.TextEditorEdit) => {
+            let timeTodoCommand = new TimeTodoCommand();
+            timeTodoCommand.run(editor, edit, false);
+        })
+    );
 }

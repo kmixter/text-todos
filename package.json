@@ -16,13 +16,20 @@
 		"commands": [
 			{
 				"command": "text-todo.markTodoDone",
-				"title": "Mark TODO done"
+				"title": "TODOs: Mark done"
 			},
 			{
 				"command": "text-todo.archiveTodos",
-				"title": "Archive TODOs"
+				"title": "TODOs: Archive"
+			},
+			{
+				"command": "text-todo.startTimeTodo",
+				"title": "TODOs: Start timing"
+			},
+			{
+				"command": "text-todo.stopTimeTodo",
+				"title": "TODOs: Stop timing"
 			}
-
 		],
 		"keybindings": [
             {
@@ -32,7 +39,15 @@
             {
                 "command": "text-todo.archiveTodos",
                 "key": "ctrl+k a"
-            }
+            },
+			{
+				"command": "text-todo.startTimeTodo",
+				"key": "ctrl+k ["
+			},
+			{
+				"command": "text-todo.stopTimeTodo",
+				"key": "ctrl+k ]"
+			}
         ]
 
 	},
