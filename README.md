@@ -8,17 +8,19 @@ to spend on them each day, and marking when they are done week to week.
 
 Generally the format of text files is:
 
-`TODOs:
+```
+TODOs:
 * Renew your license 10m <=5/15
 * Pick up groceries 2h <=5/11
 * Clean up documentation 30m <=5/11
 M Make bed
-`
+```
 
 Where a TODO region starts with TODOs and has followers of the format:
 * Asterisk for a task not yet done
 * Letter for day of the week (Monday, Tuesday, Wednesday, thuRsday, Friday, Saturday, suNday)
-* Optional estimated total time expected (not remaining,
+* Optional estimated total time expected (not remaining, total with m or h for hours or minutes)
+* Optional due date starting with <= followed by MM/DD format (assumes next year month if month earlier)
 
 ## Shortcuts
 
