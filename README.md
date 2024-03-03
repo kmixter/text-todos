@@ -1,27 +1,28 @@
-# Hello World Sample
+# VSCode Text-based TODOs
 
-This is a Hello World example that shows you how to use VS Code API.
+This is an extension that enables tracking todos in text files (vs source files). The
+format of the TODOs is specific and enables tracking tasks, due dates, how much time
+to spend on them each day, and marking when they are done week to week.
 
-Guide for this sample: https://code.visualstudio.com/api/get-started/your-first-extension.
+## Format
 
-## Demo
+Generally the format of text files is:
 
-![demo](demo.gif)
+`TODOs:
+* Renew your license 10m <=5/15
+* Pick up groceries 2h <=5/11
+* Clean up documentation 30m <=5/11
+M Make bed
+`
 
-## VS Code API
+Where a TODO region starts with TODOs and has followers of the format:
+* Asterisk for a task not yet done
+* Letter for day of the week (Monday, Tuesday, Wednesday, thuRsday, Friday, Saturday, suNday)
+* Optional estimated total time expected (not remaining,
 
-### `vscode` module
+## Shortcuts
 
-- [`commands.registerCommand`](https://code.visualstudio.com/api/references/vscode-api#commands.registerCommand)
-- [`window.showInformationMessage`](https://code.visualstudio.com/api/references/vscode-api#window.showInformationMessage)
-
-### Contribution Points
-
-- [`contributes.commands`](https://code.visualstudio.com/api/references/contribution-points#contributes.commands)
-
-## Running the Sample
-
-- Run `npm install` in terminal to install dependencies
-- Run the `Run Extension` target in the Debug View. This will:
-	- Start a task `npm: watch` to compile the code
-	- Run the extension in a new VS Code window
+The following keyboard shortcuts are registered:
+* Ctrl+K M - mark the current TODO follower line as complete given today's day of week.
+* Ctrl+K A - archive the previous block of TODOs (earlier in this file) as done,
+  and insert a new block at current cursor. Useful for a journal text file that grows down.
