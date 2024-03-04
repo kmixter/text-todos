@@ -28,3 +28,7 @@ The following keyboard shortcuts are registered:
 * Ctrl+K M - mark the current TODO follower line as complete given today's day of week.
 * Ctrl+K A - archive the previous block of TODOs (earlier in this file) as done,
   and insert a new block at current cursor. Useful for a journal text file that grows down.
+* Ctrl+K S - sorts the TODOs region so that it shows pending tasks at the top, and completed
+  tasks by day afterwards. The overall remaining completion rate is shown as a comment on the
+  TODOs: line.
+* Ctrl+K H - highlights (selects) the TODOs region.

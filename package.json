@@ -33,6 +33,10 @@
 			{
 				"command": "text-todo.sortTodos",
 				"title": "TODOs: Sort"
+			},
+			{
+				"command": "text-todo.selectTodos",
+				"title": "TODOs: Select"
 			}
 		],
 		"keybindings": [
@@ -55,7 +59,12 @@
 			{
 				"command": "text-todo.sortTodos",
 				"key": "ctrl+k s"
+			},
+			{
+				"command": "text-todo.selectTodos",
+				"key": "ctrl+k h"
 			}
+
         ]
 
 	},

@@ -430,6 +430,23 @@ class SortTodosCommand extends BaseTodoCommand {
     }
 }
 
+class SelectTodosCommand extends BaseTodoCommand {
+    async run(editor: vscode.TextEditor, edit: vscode.TextEditorEdit, isStart: boolean) {
+        const todosRegion = this.findTodosRegion(editor);
+        if (!todosRegion) {
+            vscode.window.showErrorMessage('No TODOs found');
+            return;
+        }
+
+        // Clear existing selections
+        editor.selections = [];
+
+        // Select and scroll to the TODO region
+        editor.selection = new vscode.Selection(todosRegion.start, todosRegion.end);
+        editor.revealRange(todosRegion, vscode.TextEditorRevealType.InCenter);
+    }
+}
+
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
@@ -463,4 +480,9 @@ export function activate(context: vscode.ExtensionContext) {
     const sortTodosCommand = new SortTodosCommand();
     context.subscriptions.push(
         vscode.commands.registerTextEditorCommand('text-todo.sortTodos', sortTodosCommand.run.bind(sortTodosCommand)));
+
+    const selectTodosCommand = new SelectTodosCommand();
+    context.subscriptions.push(
+        vscode.commands.registerTextEditorCommand('text-todo.selectTodos', selectTodosCommand.run.bind(selectTodosCommand)));
+
 }
