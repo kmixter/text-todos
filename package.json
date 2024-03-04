@@ -29,6 +29,10 @@
 			{
 				"command": "text-todo.stopTimeTodo",
 				"title": "TODOs: Stop timing"
+			},
+			{
+				"command": "text-todo.sortTodos",
+				"title": "TODOs: Sort"
 			}
 		],
 		"keybindings": [
@@ -47,6 +51,10 @@
 			{
 				"command": "text-todo.stopTimeTodo",
 				"key": "ctrl+k ]"
+			},
+			{
+				"command": "text-todo.sortTodos",
+				"key": "ctrl+k s"
 			}
         ]
 

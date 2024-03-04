@@ -52,11 +52,13 @@ class Todo {
             this.dueDate = new Date(
                 today.getFullYear(),
                 parseInt(dueDateMatch[1]) - 1, // Months are zero-indexed
-                parseInt(dueDateMatch[2])
+                parseInt(dueDateMatch[2]),
+                23, 59, 59
             );
 
+            const msecPerDay = 1000 * 60 * 60 * 24;
             const timeDelta = this.dueDate.getTime() - today.getTime();
-            this.daysLeft = Math.ceil(timeDelta / (1000 * 60 * 60 * 24));
+            this.daysLeft = Math.ceil(timeDelta / msecPerDay);
         }
 
         let startTimeMatch = line.match(Todo.START_TIME_RE);
@@ -79,9 +81,17 @@ class Todo {
         return true;
     }
 
+    static parse(line: string): Todo | undefined {
+        let todo = new Todo();
+        if (todo.parse(line)) {
+            return todo;
+        }
+        return undefined;
+    }
+
     static formatMinutes(minutes: number): string {
         if (minutes >= 90 || minutes === 60) {
-            return (minutes / 60.0).toFixed(2) + 'hr'; // Note: toFixed for display
+            return parseFloat((minutes / 60.0).toFixed(2)) + 'hr'; // Note: toFixed for display
         }
         return minutes.toString() + 'm';
     }
@@ -126,7 +136,7 @@ class Todo {
         if (this.isElapsed()) {
             annotations.push('ELAPSED!');
         } else if (this.hasCompletionRate()) {
-            annotations.push(`${Todo.formatMinutes(this.getCompletionRate())}s/d`);
+            annotations.push(`${Todo.formatMinutes(this.getCompletionRate())}/d`);
         }
 
         return annotations.length > 0 ? Todo.formatAnnotations(line, annotations) : line;
@@ -188,7 +198,7 @@ class BaseTodoCommand implements vscode.Disposable {
         const currentPosition = editor.selection.active;
 
         // Find last TODO region before cursor line.
-        const todoPattern = new RegExp('^TODOs(:)?\s*(?:##.*)?$');
+        const todoPattern = /^TODOs(:)?\s*(?:##.*)?$/;
         let todoRegion = undefined;
         let startLine = -1;
         for (let lineNumber = currentPosition.line - 1; lineNumber > 0; lineNumber--) {
@@ -229,14 +239,12 @@ class BaseTodoCommand implements vscode.Disposable {
 
 class MarkTodoDoneCommand extends BaseTodoCommand {
     async run(editor: vscode.TextEditor, edit: vscode.TextEditorEdit) {
-        if (!editor) { return; }
-
         const currentPosition = editor.selection.active;
         const currentLine = editor.document.lineAt(currentPosition.line);
         const todoText = currentLine.text;
 
-        const todo = new Todo();
-        if (!todo.parse(todoText)) {
+        const todo = Todo.parse(todoText);
+        if (!todo) {
             vscode.window.showErrorMessage('Not a TODO line');
             return;
         }
@@ -253,8 +261,6 @@ class MarkTodoDoneCommand extends BaseTodoCommand {
 
 class ArchiveTodosCommand extends BaseTodoCommand {
     async run(editor: vscode.TextEditor, edit: vscode.TextEditorEdit) {
-        if (!editor) { return; }
-
         const todoRegion = this.findTodosRegion(editor);
         if (todoRegion === undefined) {
             vscode.window.showInformationMessage('No TODOs found');
@@ -306,10 +312,10 @@ class TimeTodoCommand extends BaseTodoCommand {
 
         const resultText: string[] = [];
         for (let lineNumber = todosRegion.start.line; lineNumber <= todosRegion.end.line; ++lineNumber) {
-            let todo = new Todo();
             const line = editor.document.lineAt(lineNumber)
+            let todo = Todo.parse(line.text);
 
-            if (!todo.parse(line.text)) {
+            if (!todo) {
                 resultText.push(line.text);
                 continue;
             }
@@ -345,6 +351,85 @@ class TimeTodoCommand extends BaseTodoCommand {
     }
 }
 
+class SortTodosCommand extends BaseTodoCommand {
+    private static getPendingLinePriority(todo: Todo) {
+        if (!todo.hasCompletionRate()) {
+            return -1;
+        }
+        if (todo.isElapsed()) {
+            return 1<<31;
+        }
+        return todo.getCompletionRate();
+    }
+
+    private static getTotalsAnnotation(todos: Todo[]): string {
+        if (todos.find((t) => t.isElapsed())) {
+            return '∑: ELAPSED!';
+        }
+        let sumCompletionRate = 0;
+        for (const todo of todos) {
+            sumCompletionRate += todo.getCompletionRate();
+        }
+        return `∑: ${Todo.formatMinutes(sumCompletionRate)}/d`;
+    }
+
+    sortTodos(todoLines: string[]): string[] {
+        const pending: Todo[] = [];
+        let completedByDay: string[][] = [];
+        const unknown: string[] = [];
+
+        for (let i = 0; i < 7; ++i) {
+            completedByDay.push([]);
+        }
+
+        for (const line of todoLines) {
+            if (BaseTodoCommand.isBlankLine(line)) { continue; }
+
+            const todo = Todo.parse(line);
+            if (todo) {
+                if (todo.dayNumber >= 0) {
+                    completedByDay[todo.dayNumber].push(line);
+                } else {
+                    pending.push(todo);
+                }
+            } else {
+                unknown.push(line);
+            }
+        }
+
+        // Sort pending based on your priority logic
+        pending.sort((a, b) => (SortTodosCommand.getPendingLinePriority(b) -
+                                SortTodosCommand.getPendingLinePriority(a)));
+
+        if (unknown.length > 0) {
+            unknown[0] = Todo.formatAnnotations(unknown[0], [SortTodosCommand.getTotalsAnnotation(pending)]);
+        }
+
+        // Final array assembly
+        const resultText = [...unknown];
+        for (const todo of pending) {
+            resultText.push(todo.format());
+        }
+        for (let i = 0; i < 7; i++) {
+            resultText.push(...completedByDay[i]);
+        }
+
+        return resultText;
+    }
+
+    async run(editor: vscode.TextEditor, edit: vscode.TextEditorEdit, isStart: boolean) {
+        const todosRegion = this.findTodosRegion(editor);
+        if (!todosRegion) {
+            vscode.window.showErrorMessage('No TODO region');
+            return;
+        }
+        let todoLines = editor.document.getText(todosRegion).split('\n');
+        todoLines = this.sortTodos(todoLines);
+
+        edit.replace(todosRegion, todoLines.join('\n'));
+    }
+}
+
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
@@ -374,4 +459,8 @@ export function activate(context: vscode.ExtensionContext) {
             timeTodoCommand.run(editor, edit, false);
         })
     );
+
+    const sortTodosCommand = new SortTodosCommand();
+    context.subscriptions.push(
+        vscode.commands.registerTextEditorCommand('text-todo.sortTodos', sortTodosCommand.run.bind(sortTodosCommand)));
 }
