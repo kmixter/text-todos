@@ -231,6 +231,70 @@ class BaseTodoCommand implements vscode.Disposable {
                                 document.lineAt(endLine).range.end);
     }
 
+    private static getPendingLinePriority(todo: Todo) {
+        if (!todo.hasCompletionRate()) {
+            return -1;
+        }
+        if (todo.isElapsed()) {
+            return 1<<31;
+        }
+        return todo.getCompletionRate();
+    }
+
+    private static getTotalsAnnotation(todos: Todo[]): string {
+        if (todos.find((t) => t.isElapsed())) {
+            return '∑: ELAPSED!';
+        }
+        let sumCompletionRate = 0;
+        for (const todo of todos) {
+            sumCompletionRate += todo.getCompletionRate();
+        }
+        return `∑: ${Todo.formatMinutes(sumCompletionRate)}/d`;
+    }
+
+    sortTodos(todoLines: string[]): string[] {
+        const pending: Todo[] = [];
+        let completedByDay: string[][] = [];
+        const unknown: string[] = [];
+
+        for (let i = 0; i < 7; ++i) {
+            completedByDay.push([]);
+        }
+
+        for (const line of todoLines) {
+            if (BaseTodoCommand.isBlankLine(line)) { continue; }
+
+            const todo = Todo.parse(line);
+            if (todo) {
+                if (todo.dayNumber >= 0) {
+                    completedByDay[todo.dayNumber].push(line);
+                } else {
+                    pending.push(todo);
+                }
+            } else {
+                unknown.push(line);
+            }
+        }
+
+        // Sort pending based on your priority logic
+        pending.sort((a, b) => (SortTodosCommand.getPendingLinePriority(b) -
+                                SortTodosCommand.getPendingLinePriority(a)));
+
+        if (unknown.length > 0) {
+            unknown[0] = Todo.formatAnnotations(unknown[0], [SortTodosCommand.getTotalsAnnotation(pending)]);
+        }
+
+        // Final array assembly
+        const resultText = [...unknown];
+        for (const todo of pending) {
+            resultText.push(todo.format());
+        }
+        for (let i = 0; i < 7; i++) {
+            resultText.push(...completedByDay[i]);
+        }
+
+        return resultText;
+    }
 
     dispose() {
         // Used to release any resources if needed.
@@ -272,9 +336,10 @@ class ArchiveTodosCommand extends BaseTodoCommand {
         const archivedText: string[] = [];
         const newText: string[] = [];
 
-        todoText.split('\n').forEach(line => {
+        let todoLines = this.sortTodos(todoText.split('\n'));
+        todoLines.forEach(line => {
             if (!Todo.isTodoLine(line)) {
-                archivedText.push(line);
+                archivedText.push(Todo.stripAnnotations(line));
                 newText.push(line);
             } else if (Todo.isPendingTodoLine(line)) {
                 newText.push(line);
@@ -353,71 +418,6 @@ class TimeTodoCommand extends BaseTodoCommand {
 }
 
 class SortTodosCommand extends BaseTodoCommand {
-    private static getPendingLinePriority(todo: Todo) {
-        if (!todo.hasCompletionRate()) {
-            return -1;
-        }
-        if (todo.isElapsed()) {
-            return 1<<31;
-        }
-        return todo.getCompletionRate();
-    }
-
-    private static getTotalsAnnotation(todos: Todo[]): string {
-        if (todos.find((t) => t.isElapsed())) {
-            return '∑: ELAPSED!';
-        }
-        let sumCompletionRate = 0;
-        for (const todo of todos) {
-            sumCompletionRate += todo.getCompletionRate();
-        }
-        return `∑: ${Todo.formatMinutes(sumCompletionRate)}/d`;
-    }
-
-    sortTodos(todoLines: string[]): string[] {
-        const pending: Todo[] = [];
-        let completedByDay: string[][] = [];
-        const unknown: string[] = [];
-
-        for (let i = 0; i < 7; ++i) {
-            completedByDay.push([]);
-        }
-
-        for (const line of todoLines) {
-            if (BaseTodoCommand.isBlankLine(line)) { continue; }
-
-            const todo = Todo.parse(line);
-            if (todo) {
-                if (todo.dayNumber >= 0) {
-                    completedByDay[todo.dayNumber].push(line);
-                } else {
-                    pending.push(todo);
-                }
-            } else {
-                unknown.push(line);
-            }
-        }
-
-        // Sort pending based on your priority logic
-        pending.sort((a, b) => (SortTodosCommand.getPendingLinePriority(b) -
-                                SortTodosCommand.getPendingLinePriority(a)));
-
-        if (unknown.length > 0) {
-            unknown[0] = Todo.formatAnnotations(unknown[0], [SortTodosCommand.getTotalsAnnotation(pending)]);
-        }
-
-        // Final array assembly
-        const resultText = [...unknown];
-        for (const todo of pending) {
-            resultText.push(todo.format());
-        }
-        for (let i = 0; i < 7; i++) {
-            resultText.push(...completedByDay[i]);
-        }
-
-        return resultText;
-    }
-
     async run(editor: vscode.TextEditor, edit: vscode.TextEditorEdit, isStart: boolean) {
         const todosRegion = this.findTodosRegion(editor);
         if (!todosRegion) {
