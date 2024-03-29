@@ -250,7 +250,8 @@ class MarkTodoDoneCommand extends BaseTodoCommand {
         }
 
         if (!todo.isDone()) {
-            todo.dayNumber = new Date().getDay(); // 0 for Sunday, 6 for Saturday
+             // Get current DOW, with 0 for Monday for workweek oriented sorting
+            todo.dayNumber = (new Date().getDay() + 6) % 7;
         } else {
             todo.dayNumber = -1;
         }
