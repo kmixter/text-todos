@@ -448,6 +448,26 @@ class SelectTodosCommand extends BaseTodoCommand {
     }
 }
 
+function insertDateTimeCommand(editor: vscode.TextEditor,
+                               edit: vscode.TextEditorEdit) {
+    // Get the current date and time
+    const now = new Date();
+    const formattedDateTime = now.toLocaleString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+    });
+
+    // Create the separator line
+    const separator = '-'.repeat(formattedDateTime.length);
+
+    // Insert text with a newline
+    editor.edit(editBuilder => {
+        editBuilder.insert(editor.selection.active, formattedDateTime + '\n' + separator);
+    });
+}
+
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
@@ -483,7 +503,10 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerTextEditorCommand('text-todo.sortTodos', sortTodosCommand.run.bind(sortTodosCommand)));
 
     const selectTodosCommand = new SelectTodosCommand();
+
     context.subscriptions.push(
         vscode.commands.registerTextEditorCommand('text-todo.selectTodos', selectTodosCommand.run.bind(selectTodosCommand)));
 
+    context.subscriptions.push(
+        vscode.commands.registerTextEditorCommand('text-todo.insertDateTime', insertDateTimeCommand));
 }

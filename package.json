@@ -41,6 +41,10 @@
 			{
 				"command": "text-todo.selectTodos",
 				"title": "TODOs: Select"
+			},
+			{
+				"command": "text-todo.insertDateTime",
+				"title": "TODOs: Insert date&time"
 			}
 		],
 		"keybindings": [
@@ -67,8 +71,11 @@
 			{
 				"command": "text-todo.selectTodos",
 				"key": "ctrl+k h"
+			},
+			{
+				"command": "text-todo.insertDateTime",
+				"key": "ctrl+k t"
 			}
-
         ]
 
 	},
