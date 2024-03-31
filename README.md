@@ -32,3 +32,4 @@ The following keyboard shortcuts are registered:
   tasks by day afterwards. The overall remaining completion rate is shown as a comment on the
   TODOs: line.
 * Ctrl+K H - highlights (selects) the TODOs region.
+* Ctrl+K T - inserts a new date header
