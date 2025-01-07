@@ -2,7 +2,7 @@
 	"name": "text-todos",
 	"displayName": "text-todos",
 	"description": "Text TODOs tool for VS Code",
-	"version": "0.0.1",
+	"version": "0.0.2",
 	"publisher": "mixterComm",
 	"repository": {
 		"type": "git",
