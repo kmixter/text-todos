@@ -22,6 +22,7 @@ Where a TODO region starts with TODOs and has followers of the format:
 * Optional estimated total time expected (not remaining, total with m or h for hours or minutes) (e.g. * This will take an hour 1hr)
 * Optional due date starting with <= followed by MM/DD format (assumes next year month if month earlier) (e.g. * This is due first of April <=4/1)
 * Optional time spent to date prefixed with a plus (e.g. * I have spent 55 minutes on this. +55m)
+* Optional reward for finishing this, a number prefixing c (e.g. * I will get 200 coin for finishing this. 200c)
 
 ## Shortcuts
 
@@ -30,7 +31,7 @@ The following keyboard shortcuts are registered:
 * Ctrl+K A - archive the previous block of TODOs (earlier in this file) as done,
   and insert a new block at current cursor. Useful for a journal text file that grows down.
 * Ctrl+K S - sorts the TODOs region so that it shows pending tasks at the top, and completed
-  tasks by day afterwards. The overall remaining completion rate is shown as a comment on the
+  tasks by day afterwards. Overall stats are shown as a comment on the
   TODOs: line.
 * Ctrl+K H - highlights (selects) the TODOs region.
 * Ctrl+K T - inserts a new date header

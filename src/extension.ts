@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 
-class Todo {
+export class Todo {
     dayNumber: number = -1;
     desc: string = '';
     duration: number | null = null;
@@ -8,19 +8,21 @@ class Todo {
     daysLeft: number | null = null;
     start: Date | null = null;
     spentMinutes: number | null = null;
+    coins: number | null = null;
 
     private static TODO_LINE_RE = /^[MTWRFSN\*] /;
     private static DURATION_RE = /\ ([\d\.]+)m\b| ([\d\.]+)hr(s)?\b/;
     private static DUE_DATE_RE = /\ <=(\d+)\/(\d+)\b/;
     private static START_TIME_RE = /\@(\d+):(\d+)/;
     private static SPENT_TIME_RE = /\ \+([\d\.]+)(m|hr)/;
+    private static COIN_RE = /\b([\d\.]+)c\b/;
 
     private static DOW_STRINGS = ['M', 'T', 'W', 'R', 'F', 'S', 'N'];
 
     constructor() {
     }
 
-    parse(line: string): boolean {
+    parse(line: string, now: Date = new Date()): boolean {
         if (!Todo.isTodoLine(line)) {
             return false;
         }
@@ -32,10 +34,10 @@ class Todo {
         }
 
         this.desc = Todo.stripAnnotations(line.substring(2));
-        [Todo.DURATION_RE, Todo.DUE_DATE_RE, Todo.START_TIME_RE, Todo.SPENT_TIME_RE].forEach((re) => {
+        [Todo.DURATION_RE, Todo.DUE_DATE_RE, Todo.START_TIME_RE, Todo.SPENT_TIME_RE, Todo.COIN_RE].forEach((re) => {
             this.desc = this.desc.replace(re, '');
         });
-        this.desc.trimEnd();
+        this.desc = this.desc.trimEnd();
 
         let durationMatch = line.match(Todo.DURATION_RE);
         if (durationMatch) {
@@ -48,16 +50,15 @@ class Todo {
 
         let dueDateMatch = line.match(Todo.DUE_DATE_RE);  // Assuming _DUE_DATE_RE is defined
         if (dueDateMatch) {
-            const today = new Date();
             this.dueDate = new Date(
-                today.getFullYear(),
+                now.getFullYear(),
                 parseInt(dueDateMatch[1]) - 1, // Months are zero-indexed
                 parseInt(dueDateMatch[2]),
                 23, 59, 59
             );
 
             const msecPerDay = 1000 * 60 * 60 * 24;
-            const timeDelta = this.dueDate.getTime() - today.getTime();
+            const timeDelta = this.dueDate.getTime() - now.getTime();
             this.daysLeft = Math.ceil(timeDelta / msecPerDay);
         }
 
@@ -65,7 +66,7 @@ class Todo {
         if (startTimeMatch) {
             const hour = parseInt(startTimeMatch[1]);
             const minute = parseInt(startTimeMatch[2]);
-            this.start = new Date(); // Get the current date and time
+            this.start = new Date(now); // Use the provided date/time
             this.start.setHours(hour);
             this.start.setMinutes(minute);
         }
@@ -78,12 +79,18 @@ class Todo {
             }
         }
 
+        // Parse coins
+        let coinMatch = line.match(Todo.COIN_RE);
+        if (coinMatch) {
+            this.coins = parseFloat(coinMatch[1]);
+        }
+
         return true;
     }
 
-    static parse(line: string): Todo | undefined {
+    static parse(line: string, now: Date = new Date()): Todo | undefined {
         let todo = new Todo();
-        if (todo.parse(line)) {
+        if (todo.parse(line, now)) {
             return todo;
         }
         return undefined;
@@ -93,7 +100,7 @@ class Todo {
         if (minutes >= 90 || minutes === 60) {
             return parseFloat((minutes / 60.0).toFixed(2)) + 'hr'; // Note: toFixed for display
         }
-        return minutes.toString() + 'm';
+        return Math.round(minutes).toString() + 'm';
     }
 
     static stripAnnotations(line: string): string {
@@ -120,6 +127,10 @@ class Todo {
             line += ' +' + Todo.formatMinutes(this.spentMinutes);
         }
 
+        if (this.coins !== null) {
+            line += ` ${this.coins}c`;
+        }
+
         if (this.dueDate !== null) {
             line += ` <=${this.dueDate.getMonth() + 1}/${this.dueDate.getDate()}`;
         }
@@ -139,6 +150,10 @@ class Todo {
             annotations.push(`${Todo.formatMinutes(this.getCompletionRate())}/d`);
         }
 
+        if (this.hasCoinRate()) {
+            annotations.push(`${Math.round(this.getCoinRate())}c/hr`);
+        }
+
         return annotations.length > 0 ? Todo.formatAnnotations(line, annotations) : line;
     }
 
@@ -155,6 +170,17 @@ class Todo {
             return 0;
         }
         return this.duration! / this.daysLeft!; // Non-null assertion as checked before
+    }
+
+    hasCoinRate(): boolean {
+        return this.coins !== null && this.duration !== null;
+    }
+
+    getCoinRate(): number {
+        if (!this.hasCoinRate()) {
+            return 0;
+        }
+        return this.coins! / (this.duration! / 60); // Non-null assertion as checked before
     }
 
     isDone(): boolean {
@@ -242,14 +268,45 @@ class BaseTodoCommand implements vscode.Disposable {
     }
 
     private static getTotalsAnnotation(todos: Todo[]): string {
-        if (todos.find((t) => t.isElapsed())) {
-            return '∑: ELAPSED!';
-        }
+        const annotations = [];
+
         let sumCompletionRate = 0;
+        let totalTimeRemaining = 0;
+        let totalCoinsRemaining = 0;
+        let totalCoins = 0;
+        let totalHours = 0;
+
         for (const todo of todos) {
             sumCompletionRate += todo.getCompletionRate();
+            if (!todo.isDone()) {
+                if (todo.duration !== null) {
+                    totalTimeRemaining += todo.duration;
+                }
+                if (todo.coins !== null) {
+                    totalCoinsRemaining += todo.coins;
+                }
+                if (todo.duration !== null && todo.coins !== null) {
+                    totalCoins += todo.coins;
+                    totalHours += todo.duration / 60;
+                }
+            }
         }
-        return `∑: ${Todo.formatMinutes(sumCompletionRate)}/d`;
+
+        if (sumCompletionRate > 0) {
+            annotations.push(`${Todo.formatMinutes(sumCompletionRate)}/d`);
+        }
+        if (totalTimeRemaining > 0) {
+            annotations.push(`${Todo.formatMinutes(totalTimeRemaining)}`);
+        }
+        if (totalCoinsRemaining > 0) {
+            annotations.push(`${totalCoinsRemaining}c`);
+        }
+        if (totalHours > 0) {
+            const coinRate = totalCoins / totalHours;
+            annotations.push(`${coinRate.toFixed(2).replace(/\.?0+$/, '')}c/hr`);
+        }
+
+        return '∑: ' + annotations.join(' ');
     }
 
     sortTodos(todoLines: string[]): string[] {
