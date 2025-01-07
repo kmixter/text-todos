@@ -7,7 +7,7 @@ const vscodeMock = {
         createTextEditorDecorationType: () => {}
     }
 };
-const { Todo } = proxyquire.noCallThru()('../extension', { 'vscode': vscodeMock });
+const { Todo, BaseTodoCommand } = proxyquire.noCallThru()('../extension', { 'vscode': vscodeMock });
 
 describe('Todo Parsing', () => {
     it('should parse a simple TODO line', () => {
@@ -83,5 +83,91 @@ describe('Todo Parsing', () => {
         const todo2 = Todo.parse(line2);
         assert(todo1 !== undefined && todo2 !== undefined);
         assert.notDeepStrictEqual(todo1, todo2);
+    });
+
+    it('should sort TODOs correctly', () => {
+        const lines = [
+            'TODOs:',
+            '* This is a pending TODO',
+            'M This is a completed TODO on Monday',
+            'T This is a completed TODO on Tuesday',
+            '* Another pending TODO',
+            'W This is a completed TODO on Wednesday'
+        ];
+
+        const baseTodoCommand = new BaseTodoCommand();
+        const sortedTodos = baseTodoCommand.sortTodos(lines);
+
+        assert.strictEqual(sortedTodos[0], 'TODOs:');
+        assert.strictEqual(sortedTodos[1], '* This is a pending TODO');
+        assert.strictEqual(sortedTodos[2], '* Another pending TODO');
+        assert.strictEqual(sortedTodos[3], 'M This is a completed TODO on Monday');
+        assert.strictEqual(sortedTodos[4], 'T This is a completed TODO on Tuesday');
+        assert.strictEqual(sortedTodos[5], 'W This is a completed TODO on Wednesday');
+    });
+});
+
+describe('Todo Sorting', () => {
+    it('should sort TODOs with due dates and different remaining times', () => {
+        const fixedDate = new Date(2024, 9, 2); // October 2, 2024
+
+        const lines = [
+            'TODOs:',
+            `* TODO with 120 minutes remaining 120m <=10/7`,
+            `* TODO with 60 minutes remaining 60m <=10/7`,
+            `* TODO with 180 minutes remaining 180m <=10/7`
+        ];
+
+        const baseTodoCommand = new BaseTodoCommand();
+        const sortedTodos = baseTodoCommand.sortTodos(lines, fixedDate);
+
+        assert.strictEqual(sortedTodos[0], `TODOs:                                                            ##∑: 1hr/d 6hr`);
+        assert.strictEqual(sortedTodos[1], `* TODO with 180 minutes remaining 3hr <=10/7                      ##30m/d`);
+        assert.strictEqual(sortedTodos[2], `* TODO with 120 minutes remaining 2hr <=10/7                      ##20m/d`);
+        assert.strictEqual(sortedTodos[3], `* TODO with 60 minutes remaining 1hr <=10/7                       ##10m/d`);
+    });
+
+    it('should sort TODOs with coins and varying times left', () => {
+        const fixedDate = new Date(2024, 9, 2); // October 2, 2024
+
+        const lines = [
+            `TODOs:`,
+            `* TODO with 120 minutes remaining 120m 50c`,
+            `* TODO with 60 minutes remaining 60m 100c`,
+            `* TODO with 180 minutes remaining 180m 90c`
+        ];
+
+        const baseTodoCommand = new BaseTodoCommand();
+        const sortedTodos = baseTodoCommand.sortTodos(lines, fixedDate);
+
+        assert.strictEqual(sortedTodos[0], `TODOs:                                                            ##∑: 6hr 240c 40c/hr`);
+        assert.strictEqual(sortedTodos[1], `* TODO with 60 minutes remaining 1hr 100c                         ##100c/hr`);
+        assert.strictEqual(sortedTodos[2], `* TODO with 180 minutes remaining 3hr 90c                         ##30c/hr`);
+        assert.strictEqual(sortedTodos[3], `* TODO with 120 minutes remaining 2hr 50c                         ##25c/hr`);
+    });
+
+    it('should sort TODOs of different forms', () => {
+        const fixedDate = new Date(2024, 9, 2); // October 2, 2024
+
+        const lines = [
+            'TODOs:',
+            '* TODO elapsed <=10/1',
+            '* First boring TODO',
+            'M TODO finished +15m 15m 16c <=9/1',
+            '* TODO with completion rate 20m <=10/7',
+            '* Second boring TODO',
+            '* TODO with coin rate 20m 50c',
+        ];
+
+        const baseTodoCommand = new BaseTodoCommand();
+        const sortedTodos = baseTodoCommand.sortTodos(lines, fixedDate);
+
+        assert.strictEqual(sortedTodos[0], 'TODOs:                                                            ##∑: 3m/d 40m 50c 150c/hr');
+        assert.strictEqual(sortedTodos[1], '* TODO elapsed <=10/1                                             ##ELAPSED!');
+        assert.strictEqual(sortedTodos[2], '* TODO with completion rate 20m <=10/7                            ##3m/d');
+        assert.strictEqual(sortedTodos[3], '* TODO with coin rate 20m 50c                                     ##150c/hr');
+        assert.strictEqual(sortedTodos[4], '* First boring TODO');
+        assert.strictEqual(sortedTodos[5], '* Second boring TODO');
+        assert.strictEqual(sortedTodos[6], 'M TODO finished +15m 15m 16c <=9/1');
     });
 });

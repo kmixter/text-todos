@@ -196,7 +196,7 @@ export class Todo {
     }
 }
 
-class BaseTodoCommand implements vscode.Disposable {
+export class BaseTodoCommand implements vscode.Disposable {
     private static BLANK_LINE_RE = /^\s*$/;
     private static MAX_LINES_IN_TODOS = 1000;
     static timedRegionDecoration = vscode.window.createTextEditorDecorationType({
@@ -257,14 +257,23 @@ class BaseTodoCommand implements vscode.Disposable {
                                 document.lineAt(endLine).range.end);
     }
 
-    private static getPendingLinePriority(todo: Todo) {
-        if (!todo.hasCompletionRate()) {
-            return -1;
+    private static comparePendingLines(a: Todo, b: Todo): number {
+        if (a.isElapsed() !== b.isElapsed()) {
+            return a.isElapsed() ? -1 : 1;
         }
-        if (todo.isElapsed()) {
-            return 1<<31;
+        if (a.hasCompletionRate() !== b.hasCompletionRate()) {
+            return a.hasCompletionRate() ? -1 : 1;
         }
-        return todo.getCompletionRate();
+        if (a.hasCompletionRate() && b.hasCompletionRate()) {
+            return b.getCompletionRate() - a.getCompletionRate();
+        }
+        if (a.hasCoinRate() !== b.hasCoinRate()) {
+            return a.hasCoinRate() ? -1 : 1;
+        }
+        if (a.hasCoinRate() && b.hasCoinRate()) {
+            return b.getCoinRate() - a.getCoinRate();
+        }
+        return 0;
     }
 
     private static getTotalsAnnotation(todos: Todo[]): string {
@@ -306,10 +315,14 @@ class BaseTodoCommand implements vscode.Disposable {
             annotations.push(`${coinRate.toFixed(2).replace(/\.?0+$/, '')}c/hr`);
         }
 
+        if (annotations.length === 0) {
+            return '';
+        }
+
         return '∑: ' + annotations.join(' ');
     }
 
-    sortTodos(todoLines: string[]): string[] {
+    sortTodos(todoLines: string[], now: Date = new Date()): string[] {
         const pending: Todo[] = [];
         let completedByDay: string[][] = [];
         const unknown: string[] = [];
@@ -321,7 +334,7 @@ class BaseTodoCommand implements vscode.Disposable {
         for (const line of todoLines) {
             if (BaseTodoCommand.isBlankLine(line)) { continue; }
 
-            const todo = Todo.parse(line);
+            const todo = Todo.parse(line, now);
             if (todo) {
                 if (todo.dayNumber >= 0) {
                     completedByDay[todo.dayNumber].push(line);
@@ -334,11 +347,13 @@ class BaseTodoCommand implements vscode.Disposable {
         }
 
         // Sort pending based on your priority logic
-        pending.sort((a, b) => (SortTodosCommand.getPendingLinePriority(b) -
-                                SortTodosCommand.getPendingLinePriority(a)));
+        pending.sort(BaseTodoCommand.comparePendingLines);
 
         if (unknown.length > 0) {
-            unknown[0] = Todo.formatAnnotations(unknown[0], [SortTodosCommand.getTotalsAnnotation(pending)]);
+            const totalsAnnotation = BaseTodoCommand.getTotalsAnnotation(pending);
+            if (totalsAnnotation !== '') {
+                unknown[0] = Todo.formatAnnotations(unknown[0], [totalsAnnotation]);
+            }
         }
 
         // Final array assembly
@@ -475,7 +490,7 @@ class TimeTodoCommand extends BaseTodoCommand {
 }
 
 class SortTodosCommand extends BaseTodoCommand {
-    async run(editor: vscode.TextEditor, edit: vscode.TextEditorEdit, isStart: boolean) {
+    async run(editor: vscode.TextEditor, edit: vscode.TextEditorEdit) {
         const todosRegion = this.findTodosRegion(editor);
         if (!todosRegion) {
             vscode.window.showErrorMessage('No TODO region');
